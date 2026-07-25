@@ -260,6 +260,7 @@
     }
   }
 
+ // HTML DOM 深度解析与数据提取（已修复选择器 Bug）
   function parseHTML(htmlString) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
@@ -272,7 +273,9 @@
       if (match) total = parseInt(match[1]);
     }
 
-    const gridItems = doc.querySelectorAll('.grid_view .item');
+    // 【核心修复处】同时兼容 .grid-view (减号) 和 .grid_view (下划线)，防止豆瓣改版
+    const gridItems = doc.querySelectorAll('.grid-view .item, .grid_view .item');
+    
     gridItems.forEach(item => {
       try {
         const linkEl = item.querySelector('.info .title a');
