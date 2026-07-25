@@ -43,7 +43,7 @@
 
   <div class="form-group">
     <label for="proxyUrl">跨域代理地址 (Cloudflare Worker URL)：</label>
-    <input type="text" id="proxyUrl" placeholder="填入你部署的 Worker 地址，如 https://douban-proxy.xxx.workers.dev/?url=" value="">
+   <input type="text" id="proxyUrl" placeholder="填入你部署的 Worker 地址，如 https://.../?url=" value="https://little-wood-16b0.lalalandsyl.workers.dev/?url=">
     <small style="color: #666; margin-top: 4px;">* 请将第一步获取的 Worker 域名填入此处，并在末尾加上 <code>?url=</code></small>
   </div>
 
@@ -271,6 +271,7 @@
   }
 
 // HTML DOM 深度解析与数据提取（已彻底修复字段丢失与选择器 Bug）
+// HTML DOM 深度解析与数据提取（已优化：电影标题智能过滤与英文名检索）
   function parseHTML(htmlString) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
@@ -283,15 +284,34 @@
       if (match) total = parseInt(match[1]);
     }
 
-    // 兼容减号和下划线写法
     const gridItems = doc.querySelectorAll('.grid-view .item, .grid_view .item');
     
     gridItems.forEach(item => {
       try {
+        // --- 【重点优化：电影名智能过滤算法】 ---
         const linkEl = item.querySelector('.info .title a');
-        const title = linkEl ? linkEl.textContent.replace(/[\n\r\t]/g, '').trim() : '';
-        
-        // 【核心修复】：直接定位 .intro，去掉了错误的 .bd 层级
+        let title = '';
+        if (linkEl) {
+          // 1. 用斜杠分割所有名称，去掉各个部分前后的空格和换行
+          const parts = linkEl.textContent.split('/').map(p => p.replace(/[\n\r\t]/g, '').trim()).filter(Boolean);
+          
+          if (parts.length > 0) {
+            // 2. 第一个名称就是中文主名称
+            let mainTitle = parts[0];
+            
+            // 3. 在剩余的名称中，寻找真正的“英文名”
+            // 判断标准：含有英文字母，且绝对不能含有“中文、日文平/片假名、韩文”字符
+            const englishTitle = parts.slice(1).find(p => 
+              /[a-zA-Z]/.test(p) && // 必须有英文字母
+              !/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(p) // 绝不能含有中、日、韩字符
+            );
+
+            // 4. 如果找到了英文名，格式化为“中文名 / 英文名”；没找到则只留中文主名称
+            title = englishTitle ? `${mainTitle} / ${englishTitle}` : mainTitle;
+          }
+        }
+        // ------------------------------------
+
         const introEl = item.querySelector('.intro');
         const introText = introEl ? introEl.textContent.trim() : '';
 
@@ -300,12 +320,10 @@
           return;
         }
 
-        // 1. 提取上映年份
         let year = '';
         const yearMatch = introText.match(/\b(18\d\d|19\d\d|20\d\d)\b/);
         if (yearMatch) year = yearMatch[1];
 
-        // 2. 提取用户评分 (去掉了错误的 .bd 层级，直接在 item 内匹配 rating 样式)
         let rating = '';
         const ratingSpan = item.querySelector('[class*="rating"]');
         if (ratingSpan) {
@@ -313,12 +331,9 @@
           if (rateMatch) rating = rateMatch[1];
         }
 
-        // 3. 智能解析：主要国家 与 导演/主创
         let country = '';
         let director = '';
         const parts = introText.split('/').map(p => p.trim());
-        
-        // 常见国家与地区词库，用于智能精准定位国家字段
         const countryKeywords = ['中国', '大陆', '香港', '台湾', '美国', '英国', '日本', '韩国', '法国', '德国', '意大利', '西班牙', '印度', '泰国', '俄罗斯', '加拿大', '澳大利亚', '爱尔兰', '瑞典', '巴西', '丹麦', '波兰', '墨西哥', '荷兰', '新西兰'];
         
         parts.forEach(part => {
@@ -327,18 +342,16 @@
           }
         });
 
-        // 兼容有"导演:"显式标签的情况；若无标签，则自动排除年份、国家、电影类型，精准提取人名
         const dirMatch = introText.match(/导演[:：]\s*(.*?)(?=\s+\/|\s+$)/);
         if (dirMatch) {
           director = dirMatch[1].trim();
         } else if (parts.length > 1) {
           const nameParts = parts.filter(p => 
-            !/^\d+/.test(p) && // 排除年份和时长
-            !countryKeywords.some(kw => p.includes(kw)) && // 排除国家
-            !/剧情|喜剧|动作|爱情|科幻|动画|悬疑|惊悚|恐怖|犯罪|同性|音乐|歌舞|传记|历史|战争|西部|奇幻|冒险|灾难|武侠|黑色电影|短片|纪录片/.test(p) // 排除电影类型
+            !/^\d+/.test(p) && 
+            !countryKeywords.some(kw => p.includes(kw)) && 
+            !/剧情|喜剧|动作|爱情|科幻|动画|悬疑|惊悚|恐怖|犯罪|同性|音乐|歌舞|传记|历史|战争|西部|奇幻|冒险|灾难|武侠|黑色电影|短片|纪录片/.test(p)
           );
           if (nameParts.length > 0) {
-            // 豆瓣个人主页简介字符串中，剔除杂项后，最后一部分通常即为导演或主创核心
             director = nameParts[nameParts.length - 1]; 
           }
         }
