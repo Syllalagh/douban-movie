@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>豆瓣电影看过列表抓取与导出系统</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root { --primary: #007722; --bg: #f8f9fa; --card: #ffffff; --text: #333333; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; max-width: 900px; margin: 0 auto; }
+    .container { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    h1 { color: var(--primary); font-size: 24px; margin-top: 0; border-bottom: 2px solid var(--primary); padding-bottom: 10px; }
+    .form-group { margin-bottom: 15px; display: flex; flex-direction: column; }
+    label { font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+    input[type="text"], input[type="number"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    .flex-row { display: flex; gap: 15px; }
+    .flex-row .form-group { flex: 1; }
+    .btn-group { display: flex; gap: 10px; margin: 20px 0; }
+    button { padding: 10px 20px; font-size: 14px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+    .btn-start { background: var(--primary); color: white; }
+    .btn-start:hover { background: #005518; }
+    .btn-pause { background: #f39c12; color: white; }
+    .btn-export { background: #2980b9; color: white; }
+    button:disabled { background: #cccccc; cursor: not-allowed; }
+    .status-panel { background: #eef7f2; border-left: 4px solid var(--primary); padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+    .progress-bar { width: 100%; height: 10px; background: #e0e0e0; border-radius: 5px; overflow: hidden; margin-top: 10px; }
+    .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+    .log-area { width: 100%; height: 200px; background: #1e1e1e; color: #00ff66; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 4px; overflow-y: auto; box-sizing: border-box; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>豆瓣“看过”电影数据导出工具</h1>
+  
+  <div class="form-group">
+    <label for="userId">豆瓣用户 ID / 自定义域名：</label>
+    <input type="text" id="userId" placeholder="输入用户 ID，例如：syldb" value="syldb">
+  </div>
+
+  <div class="form-group">
+    <label for="proxyUrl">跨域代理地址 (Cloudflare Worker URL)：</label>
+    <input type="text" id="proxyUrl" placeholder="填入你部署的 Worker 地址，如 https://douban-proxy.xxx.workers.dev/?url=" value="">
+    <small style="color: #666; margin-top: 4px;">* 请将第一步获取的 Worker 域名填入此处，并在末尾加上 <code>?url=</code></small>
+  </div>
+
+  <div class="flex-row">
+    <div class="form-group">
+      <label for="minDelay">随机延迟下限 (毫秒)：</label>
+      <input type="number" id="minDelay" value="2500" step="500">
+    </div>
+    <div class="form-group">
+      <label for="maxDelay">随机延迟上限 (毫秒)：</label>
+      <input type="number" id="maxDelay" value="4500" step="500">
+    </div>
+  </div>
+
+  <div class="btn-group">
+    <button id="btnStart" class="btn-start" onclick="startScraping()">开始抓取</button>
+    <button id="btnPause" class="btn-pause" onclick="togglePause()" disabled>暂停</button>
+    <button id="btnExportCsv" class="btn-export" onclick="exportData('csv')" disabled>导出 CSV</button>
+    <button id="btnExportXlsx" class="btn-export" onclick="exportData('xlsx')" disabled>导出 Excel</button>
+  </div>
+
+  <div class="status-panel">
+    <div><strong>当前状态：</strong><span id="statusText">等待指令...</span></div>
+    <div><strong>进度统计：</strong>已抓取 <span id="pageCount">0</span> 页 | 提取电影数据 <span id="movieCount">0</span> 条</div>
+    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+  </div>
+
+  <label>控制台日志：</label>
+  <div id="logArea" class="log-area"></div>
+
+  <label style="margin-top: 20px; display: block;">最近抓取预览 (最新 5 条)：</label>
+  <table id="previewTable">
+    <thead>
+      <tr><th>电影名</th><th>导演</th><th>上映年份</th><th>主要国家</th><th>用户的评分</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+  let state = {
+    isScraping: false,
+    isPaused: false,
+    currentOffset: 0,
+    totalMovies: 0,
+    scrapedPages: 0,
+    data: [],
+    userId: '',
+    proxy: '',
+    minDelay: 2500,
+    maxDelay: 4500
+  };
+
+  const el = {
+    userId: document.getElementById('userId'),
+    proxyUrl: document.getElementById('proxyUrl'),
+    minDelay: document.getElementById('minDelay'),
+    maxDelay: document.getElementById('maxDelay'),
+    btnStart: document.getElementById('btnStart'),
+    btnPause: document.getElementById('btnPause'),
+    btnExportCsv: document.getElementById('btnExportCsv'),
+    btnExportXlsx: document.getElementById('btnExportXlsx'),
+    statusText: document.getElementById('statusText'),
+    pageCount: document.getElementById('pageCount'),
+    movieCount: document.getElementById('movieCount'),
+    progressFill: document.getElementById('progressFill'),
+    logArea: document.getElementById('logArea'),
+    previewBody: document.querySelector('#previewTable tbody')
+  };
+
+  function log(msg, type = 'info') {
+    const time = new Date().toLocaleTimeString();
+    const color = type === 'error' ? '#ff4d4d' : (type === 'warn' ? '#f39c12' : '#00ff66');
+    el.logArea.innerHTML += `<div style="color: ${color}">[${time}] ${msg}</div>`;
+    el.logArea.scrollTop = el.logArea.scrollHeight;
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function getRandomDelay() {
+    return Math.floor(Math.random() * (state.maxDelay - state.minDelay + 1)) + state.minDelay;
+  }
+
+  function updateUI() {
+    el.pageCount.innerText = state.scrapedPages;
+    el.movieCount.innerText = state.data.length;
+    if (state.totalMovies > 0) {
+      const percent = Math.min(100, Math.round((state.currentOffset / state.totalMovies) * 100));
+      el.progressFill.style.width = percent + '%';
+    }
+  }
+
+  function renderPreview() {
+    el.previewBody.innerHTML = '';
+    const recent = state.data.slice(-5).reverse();
+    recent.forEach(item => {
+      el.previewBody.innerHTML += `<tr>
+        <td>${item['电影名']}</td>
+        <td>${item['导演']}</td>
+        <td>${item['上映年份']}</td>
+        <td>${item['主要国家']}</td>
+        <td>${item['用户的评分']}</td>
+      </tr>`;
+    });
+  }
+
+  function togglePause() {
+    state.isPaused = !state.isPaused;
+    if (state.isPaused) {
+      el.btnPause.innerText = "继续";
+      el.btnPause.style.background = "#27ae60";
+      el.statusText.innerText = "任务已暂停";
+      log("提示：任务已手动暂停，点击‘继续’恢复。", "warn");
+    } else {
+      el.btnPause.innerText = "暂停";
+      el.btnPause.style.background = "#f39c12";
+      el.statusText.innerText = "正在抓取中...";
+      log("提示：恢复抓取...", "info");
+      scrapeLoop();
+    }
+  }
+
+  async function startScraping() {
+    const userId = el.userId.value.trim();
+    const proxy = el.proxyUrl.value.trim();
+    if (!userId) return alert("请输入豆瓣用户 ID！");
+    if (!proxy) return alert("请填入你部署的 Cloudflare Worker 跨域代理地址！");
+
+    state.userId = userId;
+    state.proxy = proxy.endsWith('?url=') ? proxy : (proxy + '?url=');
+    state.minDelay = parseInt(el.minDelay.value) || 2500;
+    state.maxDelay = parseInt(el.maxDelay.value) || 4500;
+
+    if (!state.isScraping) {
+      state.currentOffset = 0;
+      state.scrapedPages = 0;
+      state.data = [];
+      state.totalMovies = 0;
+      el.logArea.innerHTML = '';
+      log(`初始化完成，准备开始抓取用户 [${state.userId}] 的电影记录...`);
+    }
+
+    state.isScraping = true;
+    state.isPaused = false;
+
+    el.btnStart.disabled = true;
+    el.btnPause.disabled = false;
+    el.btnExportCsv.disabled = true;
+    el.btnExportXlsx.disabled = true;
+    el.btnPause.innerText = "暂停";
+    el.statusText.innerText = "抓取进行中...";
+
+    await scrapeLoop();
+  }
+
+  async function scrapeLoop() {
+    while (state.isScraping && !state.isPaused) {
+      const targetUrl = `https://movie.douban.com/people/${state.userId}/collect?start=${state.currentOffset}&sort=time&rating=all&filter=all&mode=grid&type=movie`;
+      const fetchUrl = `${state.proxy}${encodeURIComponent(targetUrl)}`;
+
+      log(`正在抓取第 ${state.scrapedPages + 1} 页数据...`);
+
+      const html = await fetchWithRetry(fetchUrl, 3);
+      if (!html) {
+        log(`第 ${state.scrapedPages + 1} 页尝试 3 次均失败，已被防护拦截或网络异常。`, 'error');
+        stopScraping("自动停止：网络请求多次失败");
+        break;
+      }
+
+      const { items, total } = parseHTML(html);
+      
+      if (state.totalMovies === 0 && total > 0) {
+        state.totalMovies = total;
+        log(`检测到该用户看过电影总量约：${total} 条`);
+      }
+
+      if (items.length === 0) {
+        log("本页未检测到有效记录，抓取可能已结束或触发验证码。", "warn");
+        stopScraping("数据已完全抓取完毕");
+        break;
+      }
+
+      state.data.push(...items);
+      state.scrapedPages++;
+      state.currentOffset += 15;
+      
+      updateUI();
+      renderPreview();
+
+      if (state.totalMovies > 0 && state.currentOffset >= state.totalMovies) {
+        stopScraping("全量数据获取成功！");
+        break;
+      }
+
+      const delay = getRandomDelay();
+      log(`休眠 ${(delay/1000).toFixed(1)} 秒以防止频繁访问封禁 IP...`, 'info');
+      await sleep(delay);
+    }
+  }
+
+  async function fetchWithRetry(url, retries = 3) {
+    for (let i = 1; i <= retries; i++) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.text();
+      } catch (err) {
+        log(`第 ${i}/${retries} 次请求重试中: ${err.message}`, 'warn');
+        if (i === retries) return null;
+        await sleep(3000 * i);
+      }
+    }
+  }
+
+  function parseHTML(htmlString) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlString, 'text/html');
+    const items = [];
+
+    let total = 0;
+    const titleEl = doc.querySelector('#db-usr-profile h1, head title');
+    if (titleEl) {
+      const match = titleEl.textContent.match(/\(([0-9]+)\)/);
+      if (match) total = parseInt(match[1]);
+    }
+
+    const gridItems = doc.querySelectorAll('.grid_view .item');
+    gridItems.forEach(item => {
+      try {
+        const linkEl = item.querySelector('.info .title a');
+        const title = linkEl ? linkEl.textContent.replace(/[\n\r\t]/g, '').trim() : '';
+        const introEl = item.querySelector('.info .bd p:first-child');
+        const introText = introEl ? introEl.textContent.trim() : '';
+
+        // 正则过滤剧集/综艺
+        if (/(\d+集|第[0-9一二三四五六七八九十]+季|真人秀|脱口秀)/.test(title + introText)) {
+          return;
+        }
+
+        let director = '';
+        const dirMatch = introText.match(/导演:\s*(.*?)(?=\s+\/|\s+主演|\n|$)/);
+        if (dirMatch) director = dirMatch[1].trim();
+
+        let year = '';
+        const yearMatch = introText.match(/\b(18\d\d|19\d\d|20\d\d)\b/);
+        if (yearMatch) year = yearMatch[1];
+
+        let country = '';
+        const lines = introText.split('\n');
+        if (lines.length >= 2) {
+          const subInfo = lines[1].split('/');
+          if (subInfo.length >= 2) country = subInfo[1].trim();
+        }
+
+        let rating = '';
+        const ratingSpan = item.querySelector('.info .bd span[class^="rating"]');
+        if (ratingSpan) {
+          const rateMatch = ratingSpan.className.match(/rating(\d)-t/);
+          if (rateMatch) rating = rateMatch[1];
+        }
+
+        items.push({
+          '电影名': title,
+          '导演': director,
+          '上映年份': year,
+          '主要国家': country,
+          '用户的评分': rating
+        });
+      } catch (e) {
+        console.error("解析错误", e);
+      }
+    });
+
+    return { items, total };
+  }
+
+  function stopScraping(reason) {
+    state.isScraping = false;
+    state.isPaused = false;
+    el.btnStart.disabled = false;
+    el.btnPause.disabled = true;
+    el.btnExportCsv.disabled = state.data.length === 0;
+    el.btnExportXlsx.disabled = state.data.length === 0;
+    el.statusText.innerText = reason;
+    log(`处理结束：已获取 ${state.data.length} 条数据，可以开始导出！`, 'info');
+  }
+
+  function exportData(type) {
+    if (state.data.length === 0) return alert("暂无数据导出！");
+    const worksheet = XLSX.utils.json_to_sheet(state.data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "看过电影");
+
+    const fileName = `douban_movies_${state.userId}_${new Date().toISOString().slice(0,10)}`;
+    if (type === 'csv') {
+      XLSX.writeFile(workbook, `${fileName}.csv`);
+    } else {
+      XLSX.writeFile(workbook, `${fileName}.xlsx`);
+    }
+  }
+</script>
+
+</body>
+</html>
