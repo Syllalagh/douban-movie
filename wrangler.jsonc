@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "douban-movie",
+  "compatibility_date": "2026-07-25",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "douban-movie"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
