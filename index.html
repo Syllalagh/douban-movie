@@ -7,28 +7,86 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root { --primary: #007722; --bg: #f8f9fa; --card: #ffffff; --text: #333333; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; max-width: 900px; margin: 0 auto; }
-    .container { background: var(--card); padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    h1 { color: var(--primary); font-size: 24px; margin-top: 0; border-bottom: 2px solid var(--primary); padding-bottom: 10px; }
+    * { box-sizing: border-box; } /* 确保内外边距不破坏宽度 */
+    
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+      background: var(--bg); color: var(--text); 
+      padding: 20px; max-width: 900px; margin: 0 auto; 
+    }
+    .container { 
+      background: var(--card); padding: 25px; 
+      border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+    }
+    h1 { 
+      color: var(--primary); font-size: 22px; margin-top: 0; 
+      border-bottom: 2px solid var(--primary); padding-bottom: 10px; 
+    }
+    
     .form-group { margin-bottom: 15px; display: flex; flex-direction: column; }
     label { font-weight: bold; margin-bottom: 5px; font-size: 14px; }
-    input[type="text"], input[type="number"] { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    input[type="text"], input[type="number"] { 
+      padding: 10px; border: 1px solid #ccc; border-radius: 4px; 
+      font-size: 14px; width: 100%; transition: border-color 0.2s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus {
+      border-color: var(--primary); outline: none;
+    }
+    
     .flex-row { display: flex; gap: 15px; }
-    .flex-row .form-group { flex: 1; }
+    .flex-row .form-group { flex: 1; margin-bottom: 0; }
+    
     .btn-group { display: flex; gap: 10px; margin: 20px 0; }
-    button { padding: 10px 20px; font-size: 14px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+    button { 
+      padding: 10px 20px; font-size: 14px; font-weight: bold; 
+      border: none; border-radius: 4px; cursor: pointer; 
+      transition: all 0.2s; flex-shrink: 0;
+    }
     .btn-start { background: var(--primary); color: white; }
     .btn-start:hover { background: #005518; }
     .btn-pause { background: #f39c12; color: white; }
     .btn-export { background: #2980b9; color: white; }
     button:disabled { background: #cccccc; cursor: not-allowed; }
-    .status-panel { background: #eef7f2; border-left: 4px solid var(--primary); padding: 15px; margin-bottom: 20px; border-radius: 4px; }
-    .progress-bar { width: 100%; height: 10px; background: #e0e0e0; border-radius: 5px; overflow: hidden; margin-top: 10px; }
+    
+    .status-panel { 
+      background: #eef7f2; border-left: 4px solid var(--primary); 
+      padding: 15px; margin-bottom: 20px; border-radius: 4px; 
+      font-size: 14px; line-height: 1.5;
+    }
+    .progress-bar { 
+      width: 100%; height: 10px; background: #e0e0e0; 
+      border-radius: 5px; overflow: hidden; margin-top: 10px; 
+    }
     .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
-    .log-area { width: 100%; height: 200px; background: #1e1e1e; color: #00ff66; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 4px; overflow-y: auto; box-sizing: border-box; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+    
+    .log-area { 
+      width: 100%; height: 200px; background: #1e1e1e; color: #00ff66; 
+      font-family: monospace; font-size: 12px; padding: 10px; 
+      border-radius: 4px; overflow-y: auto; 
+    }
+    
+    .table-container { width: 100%; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
     th { background-color: #f2f2f2; }
+
+    /* =========================================
+       移动端响应式适配 (屏幕宽度小于 600px 时生效)
+       ========================================= */
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      .container { padding: 15px; }
+      .flex-row { flex-direction: column; gap: 15px; }
+      
+      /* 按钮在手机上折行显示 */
+      .btn-group { flex-wrap: wrap; justify-content: space-between; }
+      .btn-group button { width: 48%; margin-bottom: 5px; text-align: center; padding: 12px 10px;}
+      
+      /* 表格在手机上支持横向滑动，防止撑破页面 */
+      .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #ddd; }
+      table { border: none; white-space: nowrap; }
+      th, td { border-top: none; border-bottom: 1px solid #ddd; }
+    }
   </style>
 </head>
 <body>
@@ -42,9 +100,9 @@
   </div>
 
   <div class="form-group">
-    <label for="proxyUrl">跨域代理地址 (Cloudflare Worker URL)：</label>
-   <input type="text" id="proxyUrl" placeholder="填入你部署的 Worker 地址，如 https://.../?url=" value="https://little-wood-16b0.lalalandsyl.workers.dev/?url=">
-    <small style="color: #666; margin-top: 4px;">* 请将第一步获取的 Worker 域名填入此处，并在末尾加上 <code>?url=</code></small>
+    <label for="proxyUrl">跨域代理地址 (已默认配置)：</label>
+    <!-- 默认绑定了你的代理地址，无需每次填写 -->
+    <input type="text" id="proxyUrl" value="https://little-wood-16b0.lalalandsyl.workers.dev/?url=">
   </div>
 
   <div class="flex-row">
@@ -67,20 +125,22 @@
 
   <div class="status-panel">
     <div><strong>当前状态：</strong><span id="statusText">等待指令...</span></div>
-    <div><strong>进度统计：</strong>已抓取 <span id="pageCount">0</span> 页 | 提取电影数据 <span id="movieCount">0</span> 条</div>
+    <div style="margin-top: 5px;"><strong>进度统计：</strong>已抓取 <span id="pageCount">0</span> 页 | 提取电影数据 <span id="movieCount">0</span> 条</div>
     <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
   </div>
 
-  <label>控制台日志：</label>
-  <div id="logArea" class="log-area"></div>
+  <label style="font-weight: bold; font-size: 14px;">控制台日志：</label>
+  <div id="logArea" class="log-area" style="margin-top: 5px;"></div>
 
-  <label style="margin-top: 20px; display: block;">最近抓取预览 (最新 5 条)：</label>
-  <table id="previewTable">
-    <thead>
-      <tr><th>电影名</th><th>导演</th><th>上映年份</th><th>主要国家</th><th>用户的评分</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <label style="margin-top: 20px; display: block; font-weight: bold; font-size: 14px;">最近抓取预览 (最新 5 条)：</label>
+  <div class="table-container">
+    <table id="previewTable">
+      <thead>
+        <tr><th>电影名</th><th>导演</th><th>上映年份</th><th>主要国家</th><th>用户的评分</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
@@ -157,9 +217,8 @@
     if (state.isPaused) {
       el.btnPause.innerText = "继续";
       el.btnPause.style.background = "#27ae60";
-      el.statusText.innerText = "任务已手动暂停";
+      el.statusText.innerText = "任务已暂停";
       
-      // 【核心修复】：暂停时，只要已经抓取到了数据，就立刻开放导出功能！
       if (state.data.length > 0) {
         el.btnExportCsv.disabled = false;
         el.btnExportXlsx.disabled = false;
@@ -170,7 +229,6 @@
       el.btnPause.style.background = "#f39c12";
       el.statusText.innerText = "正在抓取中...";
       
-      // 【核心修复】：恢复抓取时，为了防止由于同步读写出错，临时锁定导出按钮
       el.btnExportCsv.disabled = true;
       el.btnExportXlsx.disabled = true;
       log("提示：恢复抓取...", "info");
@@ -182,7 +240,7 @@
     const userId = el.userId.value.trim();
     const proxy = el.proxyUrl.value.trim();
     if (!userId) return alert("请输入豆瓣用户 ID！");
-    if (!proxy) return alert("请填入你部署的 Cloudflare Worker 跨域代理地址！");
+    if (!proxy) return alert("请填入跨域代理地址！");
 
     state.userId = userId;
     state.proxy = proxy.endsWith('?url=') ? proxy : (proxy + '?url=');
@@ -233,7 +291,7 @@
       }
 
       if (items.length === 0) {
-        log("本页未检测到有效记录，抓取可能已结束或触发验证码。", "warn");
+        log("本页未检测到有效记录，抓取已全部结束或被反爬拦截。", "warn");
         stopScraping("数据已完全抓取完毕");
         break;
       }
@@ -270,8 +328,6 @@
     }
   }
 
-// HTML DOM 深度解析与数据提取（已彻底修复字段丢失与选择器 Bug）
-// HTML DOM 深度解析与数据提取（已优化：电影标题智能过滤与英文名检索）
   function parseHTML(htmlString) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
@@ -288,34 +344,24 @@
     
     gridItems.forEach(item => {
       try {
-        // --- 【重点优化：电影名智能过滤算法】 ---
         const linkEl = item.querySelector('.info .title a');
         let title = '';
         if (linkEl) {
-          // 1. 用斜杠分割所有名称，去掉各个部分前后的空格和换行
-          const parts = linkEl.textContent.split('/').map(p => p.replace(/[\n\r\t]/g, '').trim()).filter(Boolean);
-          
-          if (parts.length > 0) {
-            // 2. 第一个名称就是中文主名称
-            let mainTitle = parts[0];
-            
-            // 3. 在剩余的名称中，寻找真正的“英文名”
-            // 判断标准：含有英文字母，且绝对不能含有“中文、日文平/片假名、韩文”字符
-            const englishTitle = parts.slice(1).find(p => 
-              /[a-zA-Z]/.test(p) && // 必须有英文字母
-              !/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(p) // 绝不能含有中、日、韩字符
+          // 变量名改为 titleParts 以区分后续的 parts
+          const titleParts = linkEl.textContent.split('/').map(p => p.replace(/[\n\r\t]/g, '').trim()).filter(Boolean);
+          if (titleParts.length > 0) {
+            let mainTitle = titleParts[0];
+            const englishTitle = titleParts.slice(1).find(p => 
+              /[a-zA-Z]/.test(p) && 
+              !/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(p)
             );
-
-            // 4. 如果找到了英文名，格式化为“中文名 / 英文名”；没找到则只留中文主名称
             title = englishTitle ? `${mainTitle} / ${englishTitle}` : mainTitle;
           }
         }
-        // ------------------------------------
 
         const introEl = item.querySelector('.intro');
         const introText = introEl ? introEl.textContent.trim() : '';
 
-        // 正则过滤剧集/综艺
         if (/(\d+集|第[0-9一二三四五六七八九十]+季|真人秀|脱口秀)/.test(title + introText)) {
           return;
         }
@@ -334,11 +380,11 @@
         let country = '';
         let director = '';
         const parts = introText.split('/').map(p => p.trim());
-        const countryKeywords = ['中国', '大陆', '香港', '台湾', '美国', '英国', '日本', '韩国', '法国', '德国', '意大利', '西班牙', '印度', '泰国', '俄罗斯', '加拿大', '澳大利亚', '爱尔兰', '瑞典', '巴西', '丹麦', '波兰', '墨西哥', '荷兰', '新西兰'];
+        const countryKeywords = ['中国', '大陆', '香港', '台湾', '澳门', '美国', '英国', '日本', '韩国', '法国', '德国', '意大利', '西班牙', '印度', '泰国', '俄罗斯', '加拿大', '澳大利亚', '爱尔兰', '瑞典', '巴西', '丹麦', '波兰', '墨西哥', '荷兰', '新西兰', '比利时', '瑞士', '奥地利', '伊朗', '阿根廷'];
         
         parts.forEach(part => {
           if (!country && countryKeywords.some(kw => part.includes(kw))) {
-            country = part;
+            country = part.replace(/^[0-9-]+\s*[\(（]/, '').replace(/[\)）]/g, '').trim();
           }
         });
 
@@ -346,10 +392,15 @@
         if (dirMatch) {
           director = dirMatch[1].trim();
         } else if (parts.length > 1) {
+          // 【核心修复】：超级兜底过滤网，解决方言、重复电影名、以及“没有中文名字”等脏数据
           const nameParts = parts.filter(p => 
             !/^\d+/.test(p) && 
             !countryKeywords.some(kw => p.includes(kw)) && 
-            !/剧情|喜剧|动作|爱情|科幻|动画|悬疑|惊悚|恐怖|犯罪|同性|音乐|歌舞|传记|历史|战争|西部|奇幻|冒险|灾难|武侠|黑色电影|短片|纪录片/.test(p)
+            !/剧情|喜剧|动作|爱情|科幻|动画|悬疑|惊悚|恐怖|犯罪|同性|音乐|歌舞|传记|历史|战争|西部|奇幻|冒险|灾难|武侠|黑色电影|短片|纪录片|脱口秀|真人秀|儿童|戏曲|情色/.test(p) &&
+            !/语$|话$|普通话|方言|配音|无对白|原声/.test(p) &&
+            !/没有中文|未知|佚名/.test(p) &&
+            (!linkEl || !linkEl.textContent.includes(p)) && 
+            p.length <= 20
           );
           if (nameParts.length > 0) {
             director = nameParts[nameParts.length - 1]; 
